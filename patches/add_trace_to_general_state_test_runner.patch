@@ -1,0 +1,104 @@
+diff --git a/tests/state_test.go b/tests/state_test.go
+index 61ce8aab3..19dce8d74 100644
+--- a/tests/state_test.go
++++ b/tests/state_test.go
+@@ -27,12 +27,16 @@ import (
+ 	"strings"
+ 	"testing"
+ 	"time"
++	"io/ioutil"
++	"log"
++	"encoding/json"
+ 
+ 	"github.com/ethereum/go-ethereum/core"
+ 	"github.com/ethereum/go-ethereum/core/rawdb"
+ 	"github.com/ethereum/go-ethereum/core/types"
+ 	"github.com/ethereum/go-ethereum/core/vm"
+-	"github.com/ethereum/go-ethereum/eth/tracers/logger"
++	"github.com/ethereum/go-ethereum/eth/tracers"	
++	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
+ )
+ 
+ func TestState(t *testing.T) {
+@@ -73,16 +77,23 @@ func TestState(t *testing.T) {
+ 		st.walk(t, dir, func(t *testing.T, name string, test *StateTest) {
+ 			for _, subtest := range test.Subtests() {
+ 				subtest := subtest
++
++				// Skip the test if it's not for the Merge fork
++				if subtest.Fork != "Merge" {
++					continue
++				}
++				
+ 				key := fmt.Sprintf("%s/%d", subtest.Fork, subtest.Index)
+ 
++				traceName := fmt.Sprintf("%s_%d_%s", subtest.Fork, subtest.Index, strings.ReplaceAll(name, "/", "_"))
+ 				t.Run(key+"/trie", func(t *testing.T) {
+-					withTrace(t, test.gasLimit(subtest), func(vmconfig vm.Config) error {
++					withTrace(t, traceName, test.gasLimit(subtest), func(vmconfig vm.Config) error {
+ 						_, _, err := test.Run(subtest, vmconfig, false)
+ 						return st.checkFailure(t, err)
+ 					})
+ 				})
+ 				t.Run(key+"/snap", func(t *testing.T) {
+-					withTrace(t, test.gasLimit(subtest), func(vmconfig vm.Config) error {
++					withTrace(t, traceName, test.gasLimit(subtest), func(vmconfig vm.Config) error {
+ 						snaps, statedb, err := test.Run(subtest, vmconfig, true)
+ 						if snaps != nil && statedb != nil {
+ 							if _, err := snaps.Journal(statedb.IntermediateRoot(false)); err != nil {
+@@ -100,23 +111,28 @@ func TestState(t *testing.T) {
+ // Transactions with gasLimit above this value will not get a VM trace on failure.
+ const traceErrorLimit = 400000
+ 
+-func withTrace(t *testing.T, gasLimit uint64, test func(vm.Config) error) {
++func withTrace(t *testing.T, name string, gasLimit uint64, test func(vm.Config) error) {
+ 	// Use config from command line arguments.
+ 	config := vm.Config{}
+-	err := test(config)
+-	if err == nil {
+-		return
+-	}
++	// err := test(config)
++	// if err == nil {
++	// 	return
++	// }
+ 
+-	// Test failed, re-run with tracing enabled.
+-	t.Error(err)
+-	if gasLimit > traceErrorLimit {
+-		t.Log("gas limit too high for EVM trace")
+-		return
+-	}
++	// // Test failed, re-run with tracing enabled.
++	// t.Error(err)
++	// if gasLimit > traceErrorLimit {
++	// 	t.Log("gas limit too high for EVM trace")
++	// 	return
++	// }
+ 	buf := new(bytes.Buffer)
+ 	w := bufio.NewWriter(buf)
+-	config.Tracer = logger.NewJSONLogger(&logger.Config{}, w)
++
++	tracerConfig := map[string]bool{"diffMode": true}
++	tracerConfigJSON, err := json.Marshal(tracerConfig)	
++	tracer, err := tracers.DefaultDirectory.New("prestateTracer", new(tracers.Context), json.RawMessage(tracerConfigJSON))
++	
++	config.Tracer = tracer
+ 	err2 := test(config)
+ 	if !reflect.DeepEqual(err, err2) {
+ 		t.Errorf("different error for second run: %v", err2)
+@@ -127,6 +143,14 @@ func withTrace(t *testing.T, gasLimit uint64, test func(vm.Config) error) {
+ 	} else {
+ 		t.Log("EVM operation log:\n" + buf.String())
+ 	}
++
++	res, err := tracer.GetResult()
++
++	err = ioutil.WriteFile(name, res, 0644)
++	if err != nil {
++    log.Fatalf("Failed to write to file: %v", err)
++	}
++	
+ 	// t.Logf("EVM output: 0x%x", tracer.Output())
+ 	// t.Logf("EVM error: %v", tracer.Error())
+ }

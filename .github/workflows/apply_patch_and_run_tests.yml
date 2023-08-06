@@ -1,0 +1,50 @@
+name: Apply Patch and Run Tests
+
+on:
+  push:
+    paths:
+    - 'patches/add_trace_to_general_state_test_runner.patch'
+    - 'path/to/your/script.sh'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Give the default GITHUB_TOKEN write permission to commit and push the changed files back to the repository.
+      contents: write
+  
+  
+    steps:
+    - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive  # Ensure Geth submodule is checked out
+
+    - name: Setup Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.17
+    
+    - name: Apply patch and run tests
+      run: |
+          ./scripts/apply_patch.sh
+
+    - name: Run geth tests and handle trace files
+      run: |
+        cd geth
+        make geth
+        make test
+        mkdir -p ../data
+        mv tests/*.json ../data/
+
+    - name: commit generated files 
+      uses: stefanzweifel/git-auto-commit-action@v4
+      with:
+         file_pattern: 'data/*.json'
+ 
+  
+    
+  
+  
+  

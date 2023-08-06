@@ -1,0 +1,19 @@
+name: Apply Patch and Run Tests
+
+on:
+  push:
+    paths:
+    - 'patch/add_trace_to_general_state_test_runner.patch'
+    - 'path/to/your/script.sh'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Apply patch and run tests
+      run: |
+        ./path/to/your/script.sh
